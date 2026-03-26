@@ -78,6 +78,7 @@ import Data.ByteString.Lazy.Char8 qualified as BLC
 import Data.Environment qualified as Env
 import Data.FileEmbed (makeRelativeToProject)
 import Data.HashMap.Strict qualified as HashMap
+import Data.HashSet qualified as Set
 import Data.Set.NonEmpty qualified as NE
 import Data.Text qualified as T
 import Data.Time.Clock (UTCTime)
@@ -87,7 +88,7 @@ import Database.PG.Query qualified as PG
 import Database.PG.Query qualified as Q
 import GHC.AssertNF.CPP
 import Hasura.App.State
-import Hasura.Authentication.Role (adminRoleName)
+import Hasura.Authentication.Role (adminRoleName, roleNameToTxt)
 import Hasura.Authentication.User (ExtraUserInfo (..), UserInfo (..))
 import Hasura.Backends.MSSQL.Connection
 import Hasura.Backends.Postgres.Connection
@@ -131,6 +132,7 @@ import Hasura.RQL.Types.Allowlist
 import Hasura.RQL.Types.Backend
 import Hasura.RQL.Types.BackendType
 import Hasura.RQL.Types.Common
+import Hasura.RQL.Types.GraphqlSchemaIntrospection (SetGraphqlIntrospectionOptions (..))
 import Hasura.RQL.Types.Metadata
 import Hasura.RQL.Types.ResizePool
 import Hasura.RQL.Types.SchemaCache
@@ -773,8 +775,12 @@ instance MonadGQLExecutionCheck AppM where
     checkQueryInAllowlist enableAL AllowlistModeGlobalOnly userInfo req sc
     return req
 
-  executeIntrospection _ introspectionQuery _ =
-    pure $ Right $ ExecStepRaw introspectionQuery
+  executeIntrospection userInfo introspectionQuery (SetGraphqlIntrospectionOptions disabledRoles) =
+    pure $
+      let role = _uiRole userInfo
+       in if role `Set.member` disabledRoles
+            then Left $ err400 NotSupported $ "introspection is disabled for role: " <> "\"" <> roleNameToTxt role <> "\""
+            else Right $ ExecStepRaw introspectionQuery
 
   checkGQLBatchedReqs _ _ _ _ = runExceptT $ pure ()
 
